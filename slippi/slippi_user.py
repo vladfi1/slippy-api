@@ -111,6 +111,8 @@ class SlippiUser:
         self.ranked_profile.daily_global_placement = ranked_data['dailyGlobalPlacement'] or 0
         self.ranked_profile.daily_regional_placement = ranked_data['dailyRegionalPlacement'] or 0
 
+        self.slippi_data = slippi_data
+
     def get_rank(self) -> str:
         """Get the rank of the Slippi user based on their ranked profile.
 

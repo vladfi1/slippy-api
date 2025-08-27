@@ -179,7 +179,7 @@ class SlippiRankedAPI:
         }
         response = requests.post('https://internal.slippi.gg', json=payload,
                                  headers=headers)
-        logger.debug(f'response: {response.json()}')
+        # logger.debug(f'response: {response.json()}')
         return response.json()
 
     def get_player_data_throttled(self, connect_code: str, is_max: bool = False):
@@ -207,10 +207,10 @@ class SlippiRankedAPI:
         Returns:
             SlippiUser | None: An instance of SlippiUser class if player data is available, None otherwise.
         """
-        logger.info(f'get_player_ranked_data: {connect_code}')
+        # logger.info(f'get_player_ranked_data: {connect_code}')
         player_data = self.get_player_data_throttled(connect_code, is_max)
 
-        logger.debug(f'player_data: {player_data}')
+        # logger.debug(f'player_data: {player_data}')
         if not player_data or not player_data['data']['getUser']:
             return
 
