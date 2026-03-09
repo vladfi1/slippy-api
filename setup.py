@@ -13,7 +13,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     install_requires=[
-        'requests~=2.29.0',
+        'requests',
         'ratelimiter~=1.2.0.post0',
         'pytest~=7.3.1'
     ],
