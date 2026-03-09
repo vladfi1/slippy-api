@@ -161,9 +161,9 @@ class SlippiRankedAPI:
         Returns:
             dict: The player data in JSON format.
         """
-        if not self.is_valid_connect_code(connect_code):
-            logger.warning(f'Invalid connect_code: {connect_code}')
-            return
+        # if not self.is_valid_connect_code(connect_code):
+        #     logger.warning(f'Invalid connect_code: {connect_code}')
+        #     return
 
         variables = {
             "cc": connect_code.upper(),
