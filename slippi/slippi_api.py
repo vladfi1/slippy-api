@@ -1,5 +1,6 @@
+import time
+import threading
 import requests
-from ratelimiter import RateLimiter
 from re import match
 
 import logging
@@ -10,8 +11,8 @@ from .slippi_user import SlippiUser
 # Get the logger instance from custom formatter
 logger = CustomFormatter().get_logger()
 
-# GraphQL query for maximum player data
-query_max = """
+# GraphQL query for player data
+query = """
 query UserProfilePageQuery($cc: String, $uid: String) {
   getUser(connectCode: $cc, fbUid: $uid) {
     ...userProfilePage
@@ -69,166 +70,69 @@ fragment profileFields on NetplayProfile {
 }
 """
 
-# GraphQL query for minimum player data
-query_min = """
-query UserProfilePageQuery($cc: String, $uid: String) {
-  getUser(connectCode: $cc, fbUid: $uid) {
-    ...userProfilePage
-    __typename
-  }
-}
 
-fragment userProfilePage on User {
-  fbUid
-  displayName
-  connectCode {
-    code
-    __typename
-  }
-  status
-  activeSubscription {
-    level
-    hasGiftSub
-    __typename
-  }
-  rankedNetplayProfile {
-    ...profileFields
-    __typename
-  }
-  rankedNetplayProfileHistory {
-    ...profileFields
-    season {
-      id
-      startedAt
-      endedAt
-      name
-      status
-      __typename
-    }
-    __typename
-  }
-  __typename
-}
+class _RateLimiter:
+  """Simple rate limiter allowing max_calls per period seconds."""
 
-fragment profileFields on NetplayProfile {
-  id
-  ratingOrdinal
-  ratingUpdateCount
-  wins
-  losses
-  dailyGlobalPlacement
-  dailyRegionalPlacement
-  continent
-  characters {
-    character
-    gameCount
-    __typename
-  }
-  __typename
-}
-"""
+  def __init__(self, max_calls: int, period: float):
+    self._min_interval = period / max_calls
+    self._lock = threading.Lock()
+    self._last_call = 0.0
+
+  def __enter__(self):
+    with self._lock:
+      now = time.monotonic()
+      wait = self._min_interval - (now - self._last_call)
+      if wait > 0:
+        time.sleep(wait)
+      self._last_call = time.monotonic()
+    return self
+
+  def __exit__(self, *args):
+    pass
 
 
 class SlippiRankedAPI:
-    def __init__(self):
-        # Initialize a rate limiter with maximum 1 call per second
-        self._limiter = RateLimiter(max_calls=1, period=1)
+  def __init__(self, max_calls: int = 1, period: float = 1.0):
+    """Initialize the API with a rate limit of max_calls per period seconds."""
+    self._limiter = _RateLimiter(max_calls=max_calls, period=period)
 
-    @staticmethod
-    def is_valid_connect_code(connect_code: str) -> bool:
-        """
-        Check if the given connect code is valid.
+  @staticmethod
+  def is_valid_connect_code(connect_code: str) -> bool:
+    """Check if the given connect code is valid."""
+    logger.info(f'is_valid_connect_code: {connect_code}')
+    return bool(match(r"^(?=.{3,9}$)[a-zA-Z]{1,7}#[0-9]{1,7}$", connect_code))
 
-        Args:
-            connect_code (str): The connect code to validate.
+  def _get_player_data(self, connect_code: str, is_max: bool = False) -> dict | None:
+    """Get player data from the Slippi API."""
+    variables = {
+      "cc": connect_code.upper(),
+      "uid": connect_code.upper()
+    }
+    payload = {
+      "operationName": "UserProfilePageQuery",
+      "query": query,
+      "variables": variables
+    }
+    headers = {"content-type": "application/json"}
+    response = requests.post('https://internal.slippi.gg', json=payload, headers=headers)
+    return response.json()
 
-        Returns:
-            bool: True if the connect code is valid, False otherwise.
-        """
-        logger.info(f'is_valid_connect_code: {connect_code}')
-        return True if (match(r"^(?=.{3,9}$)[a-zA-Z]{1,7}#[0-9]{1,7}$", connect_code)) else False
+  def get_player_data_throttled(self, connect_code: str, is_max: bool = False) -> dict | None:
+    """Get player data with rate limiting."""
+    with self._limiter:
+      return self._get_player_data(connect_code, is_max)
 
-    @staticmethod
-    def _get_player_data(self, connect_code: str, is_max: bool = False):
-        """
-        Get player data from the Slippi API.
+  def get_player_ranked_data(self, connect_code: str, is_max: bool = False) -> SlippiUser | None:
+    """Get ranked player data, returning None if the player does not exist."""
+    player_data = self.get_player_data_throttled(connect_code, is_max)
+    if not player_data or not player_data['data']['getUser']:
+      return None
+    return SlippiUser(player_data)
 
-        Args:
-            self: The instance of the SlippiRankedAPI class.
-            connect_code (str): The connect code of the player.
-            is_max (bool): Whether to fetch maximum player data or not.
-
-        Returns:
-            dict: The player data in JSON format.
-        """
-        # if not self.is_valid_connect_code(connect_code):
-        #     logger.warning(f'Invalid connect_code: {connect_code}')
-        #     return
-
-        variables = {
-            "cc": connect_code.upper(),
-            "uid": connect_code.upper()
-        }
-        payload = {
-            "operationName": "UserProfilePageQuery",
-            "query": query_min if not is_max else query_max,
-            "variables": variables
-        }
-        headers = {
-            "content-type": "application/json"
-        }
-        response = requests.post('https://internal.slippi.gg', json=payload,
-                                 headers=headers)
-        # logger.debug(f'response: {response.json()}')
-        return response.json()
-
-    def get_player_data_throttled(self, connect_code: str, is_max: bool = False):
-        """
-        Get player data with rate limiting.
-
-        Args:
-            connect_code (str): The connect code of the player.
-            is_max (bool): Whether to fetch maximum player data or not.
-
-        Returns:
-            dict: The player data in JSON format.
-        """
-        with self._limiter:
-            return self._get_player_data(self, connect_code, is_max)
-
-    def get_player_ranked_data(self, connect_code: str, is_max: bool = False) -> SlippiUser | None:
-        """
-        Get ranked player data.
-
-        Args:
-            connect_code (str): The connect code of the player.
-            is_max (bool): Whether to fetch maximum player data or not.
-
-        Returns:
-            SlippiUser | None: An instance of SlippiUser class if player data is available, None otherwise.
-        """
-        # logger.info(f'get_player_ranked_data: {connect_code}')
-        player_data = self.get_player_data_throttled(connect_code, is_max)
-
-        # logger.debug(f'player_data: {player_data}')
-        if not player_data or not player_data['data']['getUser']:
-            return
-
-        return SlippiUser(player_data)
-
-    def does_exist(self, connect_code: str) -> bool:
-        """
-        Check if a player with the given connect code exists.
-
-        Args:
-            connect_code (str): The connect code of the player.
-
-        Returns:
-            bool: True if the player exists, False otherwise.
-        """
-        results = self.get_player_data_throttled(connect_code)
-
-        if not results or not results['data']['getUser']:
-            return False
-
-        return True
+  def does_exist(self, connect_code: str) -> bool:
+    """Return True if a player with the given connect code exists."""
+    results = self.get_player_data_throttled(connect_code)
+    if not results or not results['data']['getUser']:
+      return False
+    return True

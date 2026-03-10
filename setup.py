@@ -14,7 +14,6 @@ setuptools.setup(
     long_description_content_type='text/markdown',
     install_requires=[
         'requests',
-        'ratelimiter~=1.2.0.post0',
         'pytest~=7.3.1'
     ],
     url='https://github.com/ConstObject/slippy-api',
@@ -24,6 +23,6 @@ setuptools.setup(
         'License :: OSI Approved :: MIT License',
         'Operating System :: OS Independent',
     ],
-    python_requires='>=3.6',
+    python_requires='>=3.11',
     include_package_data=True,
 )
